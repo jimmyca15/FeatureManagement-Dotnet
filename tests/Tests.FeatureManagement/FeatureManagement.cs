@@ -24,9 +24,10 @@ namespace Tests.FeatureManagement
         private const string OnFeature = "OnTestFeature";
         private const string OffFeature = "OffFeature";
         private const string ConditionalFeature = "ConditionalFeature";
+        private const string ConditionalFeature3 = "ConditionalFeature3";
 
         [Fact]
-        public void ReadsConfiguration()
+        public async Task ReadsConfiguration()
         {
             IConfiguration config = new ConfigurationBuilder().AddJsonFile("appsettings.json").Build();
 
@@ -35,18 +36,21 @@ namespace Tests.FeatureManagement
             services
                 .AddSingleton(config)
                 .AddFeatureManagement()
-                .AddFeatureFilter<TestFilter>();
+                .AddFeatureFilter<TestFilter>()
+                .AddFeatureFilter<AsyncTestFilter>();
 
             ServiceProvider serviceProvider = services.BuildServiceProvider();
 
             IFeatureManager featureManager = serviceProvider.GetRequiredService<IFeatureManager>();
 
-            Assert.True(featureManager.IsEnabled(OnFeature));
+            Assert.True(await featureManager.IsEnabled(OnFeature));
 
-            Assert.False(featureManager.IsEnabled(OffFeature));
+            Assert.False(await featureManager.IsEnabled(OffFeature));
 
-            IEnumerable<IFeatureFilter> featureFilters = serviceProvider.GetRequiredService<IEnumerable<IFeatureFilter>>();
+            IEnumerable<IFeatureFilterMetadata> featureFilters = serviceProvider.GetRequiredService<IEnumerable<IFeatureFilterMetadata>>();
 
+            //
+            // Sync filter
             TestFilter testFeatureFilter = (TestFilter)featureFilters.First(f => f is TestFilter);
 
             bool called = false;
@@ -62,7 +66,28 @@ namespace Tests.FeatureManagement
                 return true;
             };
 
-            featureManager.IsEnabled(ConditionalFeature);
+            await featureManager.IsEnabled(ConditionalFeature);
+
+            Assert.True(called);
+
+            //
+            // Async filter
+            AsyncTestFilter asyncTestFeatureFilter = (AsyncTestFilter)featureFilters.First(f => f is AsyncTestFilter);
+
+            called = false;
+
+            asyncTestFeatureFilter.Callback = (evaluationContext) =>
+            {
+                called = true;
+
+                Assert.Equal("V2", evaluationContext.Parameters["P2"]);
+
+                Assert.Equal(ConditionalFeature3, evaluationContext.FeatureName);
+
+                return Task.FromResult(true);
+            };
+
+            await featureManager.IsEnabled(ConditionalFeature3);
 
             Assert.True(called);
         }
@@ -96,7 +121,7 @@ namespace Tests.FeatureManagement
                 app.UseMvc();
             }));
 
-            IEnumerable<IFeatureFilter> featureFilters = testServer.Host.Services.GetRequiredService<IEnumerable<IFeatureFilter>>();
+            IEnumerable<IFeatureFilterMetadata> featureFilters = testServer.Host.Services.GetRequiredService<IEnumerable<IFeatureFilterMetadata>>();
 
             TestFilter testFeatureFilter = (TestFilter)featureFilters.First(f => f is TestFilter);
 
@@ -131,7 +156,7 @@ namespace Tests.FeatureManagement
             })
             .Configure(app => app.UseMvc()));
 
-            IEnumerable<IFeatureFilter> featureFilters = testServer.Host.Services.GetRequiredService<IEnumerable<IFeatureFilter>>();
+            IEnumerable<IFeatureFilterMetadata> featureFilters = testServer.Host.Services.GetRequiredService<IEnumerable<IFeatureFilterMetadata>>();
 
             TestFilter testFeatureFilter = (TestFilter)featureFilters.First(f => f is TestFilter);
 
@@ -167,7 +192,7 @@ namespace Tests.FeatureManagement
         }
 
         [Fact]
-        public void TimeWindow()
+        public async Task TimeWindow()
         {
             string feature1 = "feature1";
             string feature2 = "feature2";
@@ -198,14 +223,14 @@ namespace Tests.FeatureManagement
 
             IFeatureManager featureManager = provider.GetRequiredService<IFeatureManager>();
 
-            Assert.True(featureManager.IsEnabled(feature1));
-            Assert.False(featureManager.IsEnabled(feature2));
-            Assert.True(featureManager.IsEnabled(feature3));
-            Assert.False(featureManager.IsEnabled(feature4));
+            Assert.True(await featureManager.IsEnabled(feature1));
+            Assert.False(await featureManager.IsEnabled(feature2));
+            Assert.True(await featureManager.IsEnabled(feature3));
+            Assert.False(await featureManager.IsEnabled(feature4));
         }
 
         [Fact]
-        public void Percentage()
+        public async Task Percentage()
         {
             string feature1 = "feature1";
 
@@ -228,7 +253,7 @@ namespace Tests.FeatureManagement
 
             for (int i = 0; i < 10; i++)
             {
-                if (featureManager.IsEnabled(feature1))
+                if (await featureManager.IsEnabled(feature1))
                 {
                     enabledCount++;
                 }

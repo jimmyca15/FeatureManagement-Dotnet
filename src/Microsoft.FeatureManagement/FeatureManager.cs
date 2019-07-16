@@ -6,6 +6,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace Microsoft.FeatureManagement
 {
@@ -15,25 +16,25 @@ namespace Microsoft.FeatureManagement
     class FeatureManager : IFeatureManager
     {
         private readonly IFeatureSettingsProvider _settingsProvider;
-        private readonly IEnumerable<IFeatureFilter> _featureFilters;
+        private readonly IEnumerable<IFeatureFilterMetadata> _featureFilters;
         private readonly IEnumerable<ISessionManager> _sessionManagers;
         private readonly ILogger _logger;
-        private readonly ConcurrentDictionary<string, IFeatureFilter> _filterCache;
+        private readonly ConcurrentDictionary<string, IFeatureFilterMetadata> _filterCache;
 
-        public FeatureManager(IFeatureSettingsProvider settingsProvider, IEnumerable<IFeatureFilter> featureFilters, IEnumerable<ISessionManager> sessionManagers, ILoggerFactory loggerFactory)
+        public FeatureManager(IFeatureSettingsProvider settingsProvider, IEnumerable<IFeatureFilterMetadata> featureFilters, IEnumerable<ISessionManager> sessionManagers, ILoggerFactory loggerFactory)
         {
             _settingsProvider = settingsProvider;
             _featureFilters = featureFilters ?? throw new ArgumentNullException(nameof(featureFilters));
             _sessionManagers = sessionManagers ?? throw new ArgumentNullException(nameof(sessionManagers));
             _logger = loggerFactory.CreateLogger<FeatureManager>();
-            _filterCache = new ConcurrentDictionary<string, IFeatureFilter>();
+            _filterCache = new ConcurrentDictionary<string, IFeatureFilterMetadata>();
         }
 
-        public bool IsEnabled(string feature)
+        public async Task<bool> IsEnabled(string feature)
         {
             foreach (ISessionManager sessionManager in _sessionManagers)
             {
-                if (sessionManager.TryGet(feature, out bool cachedEnabled))
+                if (await sessionManager.TryGet(feature, out bool cachedEnabled))
                 {
                     return cachedEnabled;
                 }
@@ -61,7 +62,7 @@ namespace Microsoft.FeatureManagement
 
                     foreach (IFeatureFilterSettings featureFilterSettings in settings.EnabledFor)
                     {
-                        IFeatureFilter filter = GetFeatureFilter(featureFilterSettings.Name);
+                        IFeatureFilterMetadata filter = GetFeatureFilter(featureFilterSettings.Name);
 
                         if (filter == null)
                         {
@@ -76,7 +77,18 @@ namespace Microsoft.FeatureManagement
                             Parameters = featureFilterSettings.Parameters 
                         };
 
-                        if (filter.Evaluate(context))
+                        IFeatureFilter syncFilter = filter as IFeatureFilter;
+
+                        if (syncFilter != null && syncFilter.Evaluate(context))
+                        {
+                            enabled = true;
+
+                            break;
+                        }
+
+                        IAsyncFeatureFilter asyncFilter = filter as IAsyncFeatureFilter;
+
+                        if (asyncFilter != null && await asyncFilter.Evaluate(context))
                         {
                             enabled = true;
 
@@ -88,21 +100,21 @@ namespace Microsoft.FeatureManagement
 
             foreach (ISessionManager sessionManager in _sessionManagers)
             {
-                sessionManager.Set(feature, enabled);
+                await sessionManager.Set(feature, enabled);
             }
 
             return enabled;
         }
 
-        private IFeatureFilter GetFeatureFilter(string filterName)
+        private IFeatureFilterMetadata GetFeatureFilter(string filterName)
         {
             const string filterSuffix = "filter";
 
-            IFeatureFilter filter = _filterCache.GetOrAdd(
+            IFeatureFilterMetadata filter = _filterCache.GetOrAdd(
                 filterName,
                 (_) => {
 
-                    IEnumerable<IFeatureFilter> matchingFilters = _featureFilters.Where(f =>
+                    IEnumerable<IFeatureFilterMetadata> matchingFilters = _featureFilters.Where(f =>
                     {
                         Type t = f.GetType();
 

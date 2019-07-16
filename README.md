@@ -10,6 +10,9 @@ Here are some of the benefits of using this library:
   * Supports JSON file feature flag setup
 * Feature Flag lifetime management
   * Configuration values can change in real-time, feature flags can be consistent across the entire request
+* Simple to Complex Scenarios Covered
+  * Toggle on/off features through declarative configuration file
+  * Dynamically evaluate state of feature based on call to server
 * API extensions for ASP.Net Core and MVC framework
   * Routing
   * Filters
@@ -134,7 +137,7 @@ The basic form of feature management is checking if a feature is enabled and the
 ...
 IFeatureManager featureManager;
 ...
-if (featureManager.IsEnabled(nameof(MyFeatureFlags.FeatureU)))
+if (await featureManager.IsEnabled(nameof(MyFeatureFlags.FeatureU)))
 {
     // Do something
 }
@@ -207,7 +210,7 @@ The `<feature>` tag requires a tag helper to work. This can be done by adding th
 
 ### MVC Filters
 
-MVC filters can be set up to conditionally execute based on the state of a feature. This is done by registering MVC filters in a feature aware manner.
+MVC action filters can be set up to conditionally execute based on the state of a feature. This is done by the filters in a feature aware manner.
 
 ```
 services.AddMvc(o => 
@@ -217,18 +220,6 @@ services.AddMvc(o =>
 ```
 
 The code above adds an MVC filter named `SomeMvcFilter`. This filter is only triggered within the MVC pipeline if the feature it specifies, "FeatureV", is enabled.
-
-### Routing
-Certain routes may expose application capabilites that are gated by features. These routes can be dynamically registered and exposed based on whether a feature is enabled.
-
-```
-app.UseMvc(routes =>
-{
-    routes.MapRouteForFeature(nameof(MyFeatureFlags.Beta), "betaDefault" /* route name */, "{controller=Beta}/{action=Index}/{id?}"
-});
-```
-
-The route above exposes beta functionality of some application that is gated behind the "Beta" feature flag. The state of this feature is evaluated on every request, which means routes can be exposed to a subset of requests and or users. Furthermore, routes can dynamically be added or removed based on the toggling of feature states.
 
 ### Application building
 
@@ -282,7 +273,7 @@ Some feature filters require parameters to decide whether a feature should be tu
   {
       ... Removed for example
 
-      public bool Evaluate(FeatureFilterEvaluationContext context)
+      public Task<bool> Evaluate(FeatureFilterEvaluationContext context)
       {
           BrowserFilterSettings settings = context.Parameters.Get<BrowserFilterSettings>() ?? new BrowserFilterSettings();
 
@@ -360,7 +351,8 @@ This filter provides the capability to enable a feature based on a set percentag
 
 This filter provides the capability to enable a feature based on a time window. If only `End` is specified, the feature will be considered on until that time. If only start is specified, the feature will be considered on at all points after that time.
 
-```    "EnhancedPipeline": {
+```
+    "EnhancedPipeline": {
       "EnabledFor": [
         {
           "Name": "Microsoft.TimeWindow",
