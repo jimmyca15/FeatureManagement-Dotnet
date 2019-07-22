@@ -11,6 +11,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.FeatureManagement;
+using Microsoft.FeatureManagement.FeatureAssigners;
 using Microsoft.FeatureManagement.FeatureFilters;
 
 namespace FeatureFlagDemo
@@ -42,11 +43,12 @@ namespace FeatureFlagDemo
                     .AddFeatureFilter<BrowserFilter>()
                     .AddFeatureFilter<TimeWindowFilter>()
                     .AddFeatureFilter<PercentageFilter>()
+                    .AddFeatureAssigner<PercentageAssigner>()
                     .UseDisabledFeaturesHandler(new FeatureNotEnabledDisabledHandler());
 
             services.AddMvc(o =>
             {
-                o.Filters.AddForFeature<ThirdPartyActionFilter>(nameof(MyFeatureFlags.EnhancedPipeline));
+                o.Filters.AddForFeature<ThirdPartyActionFilter>(nameof(MyFeatures.EnhancedPipeline));
 
             }).SetCompatibilityVersion(CompatibilityVersion.Version_2_1);
         }
@@ -67,7 +69,7 @@ namespace FeatureFlagDemo
             app.UseStaticFiles();
             app.UseCookiePolicy();
 
-            app.UseMiddlewareForFeature<ThirdPartyMiddleware>(nameof(MyFeatureFlags.EnhancedPipeline));
+            app.UseMiddlewareForFeature<ThirdPartyMiddleware>(nameof(MyFeatures.EnhancedPipeline));
 
             app.UseMvc(routes =>
             {

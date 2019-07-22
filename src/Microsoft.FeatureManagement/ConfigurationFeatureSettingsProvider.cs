@@ -21,6 +21,45 @@ namespace Microsoft.FeatureManagement
             _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         }
 
+        public IAssignerSettings TryGetAssignerSettings(string assignerName)
+        {
+            IConfigurationSection configuration = GetFeatureManagementSection("Assigners");
+
+            IEnumerable<IConfigurationSection> assignerSections = configuration.GetChildren();
+
+            AssignerSettings settings = new AssignerSettings
+            {
+                Name = assignerName
+            };
+
+            List<AssignmentChoice> assignments = new List<AssignmentChoice>();
+
+            foreach (IConfigurationSection section in assignerSections)
+            {
+                //
+                // Arrays in json such as "myKey": [ "some", "values" ]
+                // Are accessed through the configuration system by using the array index as the property name, e.g. "myKey": { "0": "some", "1": "values" }
+                if (int.TryParse(section.Key, out int _) && !string.IsNullOrEmpty(section["Name"]) && assignerName.Equals(section["Name"], StringComparison.OrdinalIgnoreCase))
+                {
+                    foreach (IConfigurationSection subSection in section.GetSection("Assignments").GetChildren())
+                    {
+                        if (int.TryParse(subSection.Key, out int __) && !string.IsNullOrEmpty(subSection["Name"]))
+                        {
+                            assignments.Add(new AssignmentChoice
+                            {
+                                Name = subSection["Name"],
+                                Parameters = subSection.GetSection("Parameters")
+                            });
+                        }
+                    }
+                }
+            }
+
+            settings.Assignments = assignments;
+
+            return settings;
+        }
+
         public IFeatureSettings TryGetFeatureSettings(string featureName)
         {
             /*
@@ -52,7 +91,7 @@ namespace Microsoft.FeatureManagement
 
             */
 
-            IConfigurationSection configuration = GetFeatureConfiguration(featureName);
+            IConfigurationSection configuration = GetFeatureManagementSection(featureName);
 
             var enabledFor = new List<FeatureFilterSettings>();
 
@@ -96,26 +135,43 @@ namespace Microsoft.FeatureManagement
                 }
             }
 
+            List<FeatureVariant> variants = new List<FeatureVariant>();
+
+            foreach (IConfigurationSection section in configuration.GetSection("Variants").GetChildren())
+            {
+                if (int.TryParse(section.Key, out int i) && !string.IsNullOrEmpty(section[nameof(FeatureFilterSettings.Name)]))
+                {
+                    variants.Add(new FeatureVariant
+                    {
+                        Name = section[nameof(FeatureFilterSettings.Name)],
+                        TrackingId = null,
+                        Assignments = section.GetSection("Assignments").Get<List<string>>() ?? new List<string>(),
+                        Configuration = section.GetSection("Configuration")
+                    });
+                }
+            }
+
             return new FeatureSettings()
             {
                 Name = featureName,
-                EnabledFor = enabledFor
+                EnabledFor = enabledFor,
+                Variants = variants
             };
         }
 
-        private IConfigurationSection GetFeatureConfiguration(string featureName)
+        private IConfigurationSection GetFeatureManagementSection(string sectionName)
         {
             const string FeatureManagementSectionName = "FeatureManagement";
 
             //
             // Look for settings under the "FeatureManagement" section
-            IConfigurationSection featureConfiguration = _configuration.GetSection(FeatureManagementSectionName).GetChildren().FirstOrDefault(section => section.Key.Equals(featureName, StringComparison.OrdinalIgnoreCase));
+            IConfigurationSection featureConfiguration = _configuration.GetSection(FeatureManagementSectionName).GetChildren().FirstOrDefault(section => section.Key.Equals(sectionName, StringComparison.OrdinalIgnoreCase));
 
             //
             // Fallback to the configuration section using the feature's name
             if (featureConfiguration == null)
             {
-                featureConfiguration = _configuration.GetSection(featureName);
+                featureConfiguration = _configuration.GetSection(sectionName);
             }
 
             return featureConfiguration;

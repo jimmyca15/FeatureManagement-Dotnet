@@ -19,5 +19,10 @@ namespace Microsoft.FeatureManagement
         /// The criteria that the feature can be enabled for.
         /// </summary>
         IEnumerable<IFeatureFilterSettings> EnabledFor { get; }
+
+        /// <summary>
+        /// The variants of the feature.
+        /// </summary>
+        IEnumerable<IFeatureVariant> Variants { get; }
     }
 }

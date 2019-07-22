@@ -16,7 +16,7 @@ namespace FeatureFlagDemo.Controllers
             _featureManager = featureManager;
         }
 
-        [FeatureGate(MyFeatureFlags.Beta)]
+        [FeatureGate(MyFeatures.Beta)]
         public IActionResult Index()
         {
             return View();

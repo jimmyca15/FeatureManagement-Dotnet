@@ -39,5 +39,19 @@ namespace Microsoft.FeatureManagement
 
             return this;
         }
+
+        public IFeatureManagementBuilder AddFeatureAssigner<T>() where T : IFeatureAssigner
+        {
+            Type serviceType = typeof(IFeatureAssigner);
+
+            Type implementationType = typeof(T);
+
+            if (!Services.Any(descriptor => descriptor.ServiceType == serviceType && descriptor.ImplementationType == implementationType))
+            {
+                Services.AddSingleton(typeof(IFeatureAssigner), typeof(T));
+            }
+
+            return this;
+        }
     }
 }

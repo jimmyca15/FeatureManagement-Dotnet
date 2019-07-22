@@ -14,5 +14,12 @@ namespace Microsoft.FeatureManagement
         /// <param name="featureName">The name of the feature to retrieve settings for.</param>
         /// <returns>The feature's settings.</returns>
         IFeatureSettings TryGetFeatureSettings(string featureName);
+
+        /// <summary>
+        /// Retrieves settings for a given assigner.
+        /// </summary>
+        /// <param name="assignerName">The name of the assigner to retrieve settings for.</param>
+        /// <returns>The assigner's settings.</returns>
+        IAssignerSettings TryGetAssignerSettings(string assignerName);
     }
 }

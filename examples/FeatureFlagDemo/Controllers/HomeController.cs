@@ -7,6 +7,7 @@ using FeatureFlagDemo.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.FeatureManagement;
 using Microsoft.FeatureManagement.Mvc;
+using Microsoft.Extensions.Configuration;
 
 namespace FeatureFlagDemo.Controllers
 {
@@ -19,7 +20,7 @@ namespace FeatureFlagDemo.Controllers
             _featureManager = featureSnapshot;
         }
 
-        [FeatureGate(MyFeatureFlags.Home)]
+        [FeatureGate(MyFeatures.Home)]
         public IActionResult Index()
         {
             return View();
@@ -29,12 +30,14 @@ namespace FeatureFlagDemo.Controllers
         {
             ViewData["Message"] = "Your application description page.";
 
-            if (_featureManager.IsEnabled(nameof(MyFeatureFlags.CustomViewData)))
+            if (_featureManager.IsEnabled(nameof(MyFeatures.CustomViewData)))
             {
-                ViewData["Message"] = $"This is FANCY CONTENT you can see only if '{nameof(MyFeatureFlags.CustomViewData)}' is enabled.";
+                ViewData["Message"] = $"This is FANCY CONTENT you can see only if '{nameof(MyFeatures.CustomViewData)}' is enabled.";
             };
 
-            return View();
+            AboutBoxSettings model = _featureManager.GetConfiguration(nameof(MyFeatures.AboutBox)).Get<AboutBoxSettings>();
+
+            return View(model);
         }
 
         public IActionResult Contact()
@@ -44,7 +47,7 @@ namespace FeatureFlagDemo.Controllers
             return View();
         }
 
-        [FeatureGate(MyFeatureFlags.Beta)]
+        [FeatureGate(MyFeatures.Beta)]
         public IActionResult Beta()
         {
             ViewData["Message"] = "Your contact page.";

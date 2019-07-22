@@ -5,12 +5,13 @@ namespace FeatureFlagDemo
 {
     //
     // Define feature flags in an enum
-    public enum MyFeatureFlags
+    public enum MyFeatures
     {
         Home,
         Beta,
         CustomViewData,
         ContentEnhancement,
-        EnhancedPipeline
+        EnhancedPipeline,
+        AboutBox
     }
 }

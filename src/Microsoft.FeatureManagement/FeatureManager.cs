@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 //
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Concurrent;
@@ -16,17 +17,54 @@ namespace Microsoft.FeatureManagement
     {
         private readonly IFeatureSettingsProvider _settingsProvider;
         private readonly IEnumerable<IFeatureFilter> _featureFilters;
+        private readonly IEnumerable<IFeatureAssigner> _featureAssigners;
         private readonly IEnumerable<ISessionManager> _sessionManagers;
         private readonly ILogger _logger;
         private readonly ConcurrentDictionary<string, IFeatureFilter> _filterCache;
+        private readonly ConcurrentDictionary<string, IFeatureAssigner> _assignerCache;
 
-        public FeatureManager(IFeatureSettingsProvider settingsProvider, IEnumerable<IFeatureFilter> featureFilters, IEnumerable<ISessionManager> sessionManagers, ILoggerFactory loggerFactory)
+        public FeatureManager(IFeatureSettingsProvider settingsProvider, IEnumerable<IFeatureFilter> featureFilters, IEnumerable<IFeatureAssigner> featureAssigners, IEnumerable<ISessionManager> sessionManagers, ILoggerFactory loggerFactory)
         {
             _settingsProvider = settingsProvider;
             _featureFilters = featureFilters ?? throw new ArgumentNullException(nameof(featureFilters));
+            _featureAssigners = featureAssigners ?? throw new ArgumentNullException(nameof(featureAssigners));
             _sessionManagers = sessionManagers ?? throw new ArgumentNullException(nameof(sessionManagers));
             _logger = loggerFactory.CreateLogger<FeatureManager>();
             _filterCache = new ConcurrentDictionary<string, IFeatureFilter>();
+            _assignerCache = new ConcurrentDictionary<string, IFeatureAssigner>();
+        }
+
+        public IConfiguration GetConfiguration(string feature)
+        {
+            IFeatureSettings settings = _settingsProvider.TryGetFeatureSettings(feature);
+
+            string assignment = null;
+
+            foreach (IFeatureAssigner assigner in _featureAssigners)
+            {
+                IAssignerSettings assignerSettings = _settingsProvider.TryGetAssignerSettings(GetFeatureAssignerName(assigner));
+
+                assignment = assigner.Assign(new FeatureAssignmentContext
+                {
+                    AssignmentChoices = assignerSettings.Assignments
+                });
+
+                if (!string.IsNullOrEmpty(assignment))
+                {
+                    break;
+                }
+            }
+
+            IConfiguration result = null;
+
+            result = settings.Variants.FirstOrDefault(variant => variant.Assignments.Contains(assignment, StringComparer.OrdinalIgnoreCase))?.Configuration;
+
+            if (result == null)
+            {
+                result = settings.Variants.FirstOrDefault(variant => variant.Name.Equals("Default", StringComparison.OrdinalIgnoreCase))?.Configuration;
+            }
+
+            return result ?? new ConfigurationRoot(new List<IConfigurationProvider>());
         }
 
         public bool IsEnabled(string feature)
@@ -143,6 +181,22 @@ namespace Microsoft.FeatureManagement
             );
 
             return filter;
+        }
+
+        private string GetFeatureAssignerName(IFeatureAssigner assigner)
+        {
+            const string assignerSuffix = "assigner";
+
+            Type t = assigner.GetType();
+
+            string name = ((FilterAliasAttribute)Attribute.GetCustomAttribute(t, typeof(FilterAliasAttribute)))?.Alias;
+
+            if (name == null)
+            {
+                name = t.Name.EndsWith(assignerSuffix, StringComparison.OrdinalIgnoreCase) ? t.Name.Substring(0, t.Name.Length - assignerSuffix.Length) : t.Name;
+            }
+
+            return name;
         }
     }
 }
