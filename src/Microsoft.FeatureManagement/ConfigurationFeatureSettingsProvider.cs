@@ -23,7 +23,7 @@ namespace Microsoft.FeatureManagement
 
         public IAssignerSettings TryGetAssignerSettings(string assignerName)
         {
-            IConfigurationSection configuration = GetFeatureManagementSection("Assigners");
+            IConfigurationSection configuration = _configuration.GetSection("FeatureAssignment:Assigners");
 
             IEnumerable<IConfigurationSection> assignerSections = configuration.GetChildren();
 
@@ -41,7 +41,7 @@ namespace Microsoft.FeatureManagement
                 // Are accessed through the configuration system by using the array index as the property name, e.g. "myKey": { "0": "some", "1": "values" }
                 if (int.TryParse(section.Key, out int _) && !string.IsNullOrEmpty(section["Name"]) && assignerName.Equals(section["Name"], StringComparison.OrdinalIgnoreCase))
                 {
-                    foreach (IConfigurationSection subSection in section.GetSection("Assignments").GetChildren())
+                    foreach (IConfigurationSection subSection in section.GetSection("AssignmentChoices").GetChildren())
                     {
                         if (int.TryParse(subSection.Key, out int __) && !string.IsNullOrEmpty(subSection["Name"]))
                         {
@@ -55,7 +55,7 @@ namespace Microsoft.FeatureManagement
                 }
             }
 
-            settings.Assignments = assignments;
+            settings.AssignmentChoices = assignments;
 
             return settings;
         }

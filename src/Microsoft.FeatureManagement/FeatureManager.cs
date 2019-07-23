@@ -46,7 +46,7 @@ namespace Microsoft.FeatureManagement
 
                 assignment = assigner.Assign(new FeatureAssignmentContext
                 {
-                    AssignmentChoices = assignerSettings.Assignments
+                    AssignmentChoices = assignerSettings.AssignmentChoices
                 });
 
                 if (!string.IsNullOrEmpty(assignment))

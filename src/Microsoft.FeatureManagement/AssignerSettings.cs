@@ -6,6 +6,6 @@ namespace Microsoft.FeatureManagement
     {
         public string Name { get; set; }
 
-        public IEnumerable<AssignmentChoice> Assignments { get; set; }
+        public IEnumerable<AssignmentChoice> AssignmentChoices { get; set; }
     }
 }
