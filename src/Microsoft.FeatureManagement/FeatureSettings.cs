@@ -23,6 +23,6 @@ namespace Microsoft.FeatureManagement
         /// <summary>
         /// The variants of the feature.
         /// </summary>
-        public IEnumerable<IFeatureVariant> Variants { get; set; } = new List<IFeatureVariant>();
+        public IEnumerable<IFeatureVariantSettings> Variants { get; set; } = new List<IFeatureVariantSettings>();
     }
 }

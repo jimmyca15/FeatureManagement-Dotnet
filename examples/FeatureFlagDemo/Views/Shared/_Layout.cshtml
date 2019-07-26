@@ -29,6 +29,13 @@
                 <a asp-area="" asp-controller="Home" asp-action="Index" class="navbar-brand">FeatureFlagDemo</a>
             </div>
             <div class="navbar-collapse collapse">
+                <span style="color:#9D9D9D;float: right;">
+                    Logged in as @(Context.User.Identity?.Name)<br />
+
+                    <form action="~/home/clearSession" method="post">
+                        <input type="submit" name="refreshLogin" value="Refresh Login" />
+                    </form>
+                </span>
                 <ul class="nav navbar-nav">
                     <li><a asp-area="" asp-controller="Home" asp-action="Index">Home</a></li>
                     <li><a asp-area="" asp-controller="Home" asp-action="About">About</a></li>

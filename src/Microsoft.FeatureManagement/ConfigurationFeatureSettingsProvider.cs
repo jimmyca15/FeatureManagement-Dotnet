@@ -135,13 +135,13 @@ namespace Microsoft.FeatureManagement
                 }
             }
 
-            List<FeatureVariant> variants = new List<FeatureVariant>();
+            List<FeatureVariantSettings> variants = new List<FeatureVariantSettings>();
 
             foreach (IConfigurationSection section in configuration.GetSection("Variants").GetChildren())
             {
                 if (int.TryParse(section.Key, out int i) && !string.IsNullOrEmpty(section[nameof(FeatureFilterSettings.Name)]))
                 {
-                    variants.Add(new FeatureVariant
+                    variants.Add(new FeatureVariantSettings
                     {
                         Name = section[nameof(FeatureFilterSettings.Name)],
                         TrackingId = null,

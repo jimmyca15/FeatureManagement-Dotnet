@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.FeatureManagement;
 using Microsoft.FeatureManagement.Mvc;
 using Microsoft.Extensions.Configuration;
+using System;
 
 namespace FeatureFlagDemo.Controllers
 {
@@ -35,9 +36,7 @@ namespace FeatureFlagDemo.Controllers
                 ViewData["Message"] = $"This is FANCY CONTENT you can see only if '{nameof(MyFeatures.CustomViewData)}' is enabled.";
             };
 
-            AboutBoxSettings model = _featureManager.GetConfiguration(nameof(MyFeatures.AboutBox)).Get<AboutBoxSettings>();
-
-            return View(model);
+            return View(_featureManager.GetConfiguration(nameof(MyFeatures.AboutBox)).Get<AboutBoxSettings>());
         }
 
         public IActionResult Contact()
@@ -58,6 +57,13 @@ namespace FeatureFlagDemo.Controllers
         public IActionResult Privacy()
         {
             return View();
+        }
+
+        public IActionResult ClearSession()
+        {
+            HttpContext.Session.Clear();
+
+            return Redirect("~/home");
         }
 
         [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]

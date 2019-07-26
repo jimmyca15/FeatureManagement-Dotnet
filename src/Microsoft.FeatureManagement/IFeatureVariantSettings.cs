@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace Microsoft.FeatureManagement
 {
-    interface IFeatureVariant
+    interface IFeatureVariantSettings
     {
         string Name { get; set; }
 
