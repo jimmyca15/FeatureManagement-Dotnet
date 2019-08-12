@@ -4,7 +4,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.FeatureManagement.FeatureFilters;
 using System;
 
 namespace Microsoft.FeatureManagement
@@ -30,6 +29,8 @@ namespace Microsoft.FeatureManagement
             services.AddSingleton<IFeatureManager, FeatureManager>();
 
             services.AddSingleton<ISessionManager, EmptySessionManager>();
+
+            services.TryAddSingleton<IUserContext, EmptyUserAccessor>();
 
             services.AddScoped<IFeatureManagerSnapshot, FeatureManagerSnapshot>();
 

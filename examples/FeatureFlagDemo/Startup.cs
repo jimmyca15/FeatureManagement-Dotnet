@@ -11,8 +11,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.FeatureManagement;
-using Microsoft.FeatureManagement.FeatureAssigners;
 using Microsoft.FeatureManagement.FeatureFilters;
+using System;
 
 namespace FeatureFlagDemo
 {
@@ -39,12 +39,20 @@ namespace FeatureFlagDemo
 
             services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
 
+            services.AddSingleton<IUserContext, HttpUserAccessor>();
+
             services.AddFeatureManagement()
                     .AddFeatureFilter<BrowserFilter>()
                     .AddFeatureFilter<TimeWindowFilter>()
                     .AddFeatureFilter<PercentageFilter>()
-                    .AddFeatureAssigner<PercentageAssigner>()
                     .UseDisabledFeaturesHandler(new FeatureNotEnabledDisabledHandler());
+
+            services.AddSession(options =>
+            {
+                options.Cookie.Name = ".FeatureFlagDemo.Session";
+                options.IdleTimeout = TimeSpan.FromMinutes(10);
+                options.Cookie.IsEssential = true;
+            });
 
             services.AddMvc(o =>
             {
@@ -68,6 +76,10 @@ namespace FeatureFlagDemo
             app.UseHttpsRedirection();
             app.UseStaticFiles();
             app.UseCookiePolicy();
+
+            app.UseSession();
+
+            app.UseMiddleware<AssignUserMiddleware>();
 
             app.UseMiddlewareForFeature<ThirdPartyMiddleware>(nameof(MyFeatures.EnhancedPipeline));
 

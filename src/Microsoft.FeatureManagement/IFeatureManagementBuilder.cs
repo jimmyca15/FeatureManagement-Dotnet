@@ -28,12 +28,5 @@ namespace Microsoft.FeatureManagement
         /// <typeparam name="T">An implementation of <see cref="ISessionManager"/></typeparam>
         /// <returns>The feature management builder.</returns>
         IFeatureManagementBuilder AddSessionManager<T>() where T : ISessionManager;
-
-        /// <summary>
-        /// Adds a given feature assigner to the list of feature assigners that will be available to use when selecting between variants of a given feature.
-        /// </summary>
-        /// <typeparam name="T">The feature assigner type.</typeparam>
-        /// <returns>The feature management builder.</returns>
-        IFeatureManagementBuilder AddFeatureAssigner<T>() where T : IFeatureAssigner;
     }
 }

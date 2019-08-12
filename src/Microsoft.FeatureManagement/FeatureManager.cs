@@ -3,6 +3,8 @@
 //
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.FeatureManagement.Utils;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -17,51 +19,127 @@ namespace Microsoft.FeatureManagement
     {
         private readonly IFeatureSettingsProvider _settingsProvider;
         private readonly IEnumerable<IFeatureFilter> _featureFilters;
-        private readonly IEnumerable<IFeatureAssigner> _featureAssigners;
         private readonly IEnumerable<ISessionManager> _sessionManagers;
         private readonly ILogger _logger;
         private readonly ConcurrentDictionary<string, IFeatureFilter> _filterCache;
-        private readonly ConcurrentDictionary<string, IFeatureAssigner> _assignerCache;
+        private readonly IUserContext _userAccessor;
 
-        public FeatureManager(IFeatureSettingsProvider settingsProvider, IEnumerable<IFeatureFilter> featureFilters, IEnumerable<IFeatureAssigner> featureAssigners, IEnumerable<ISessionManager> sessionManagers, ILoggerFactory loggerFactory)
+        public FeatureManager(IFeatureSettingsProvider settingsProvider, IEnumerable<IFeatureFilter> featureFilters, IEnumerable<ISessionManager> sessionManagers, ILoggerFactory loggerFactory, IUserContext userAccessor)
         {
             _settingsProvider = settingsProvider;
             _featureFilters = featureFilters ?? throw new ArgumentNullException(nameof(featureFilters));
-            _featureAssigners = featureAssigners ?? throw new ArgumentNullException(nameof(featureAssigners));
             _sessionManagers = sessionManagers ?? throw new ArgumentNullException(nameof(sessionManagers));
             _logger = loggerFactory.CreateLogger<FeatureManager>();
             _filterCache = new ConcurrentDictionary<string, IFeatureFilter>();
-            _assignerCache = new ConcurrentDictionary<string, IFeatureAssigner>();
+            _userAccessor = userAccessor ?? throw new ArgumentNullException(nameof(userAccessor));
         }
 
         public IConfiguration GetConfiguration(string feature)
         {
             IFeatureSettings settings = _settingsProvider.TryGetFeatureSettings(feature);
 
-            string assignment = null;
+            IConfiguration result = null;
 
-            foreach (IFeatureAssigner assigner in _featureAssigners)
+            string rolloutId = null;
+
+            string username = _userAccessor.UserId;
+
+            //
+            // Check user assignment
+            if (!string.IsNullOrEmpty(username))
             {
-                IAssignerSettings assignerSettings = _settingsProvider.TryGetAssignerSettings(GetFeatureAssignerName(assigner));
-
-                assignment = assigner.Assign(new FeatureAssignmentContext
+                foreach (IFeatureVariantSettings variant in settings.Variants)
                 {
-                    AssignmentChoices = assignerSettings.AssignmentChoices
-                });
+                    if (variant.Targeting?.Users?.Contains(username, StringComparer.OrdinalIgnoreCase) ?? false)
+                    {
+                        result = variant.Configuration;
 
-                if (!string.IsNullOrEmpty(assignment))
-                {
-                    break;
+                        break;
+                    }
                 }
             }
 
-            IConfiguration result = null;
-
-            result = settings.Variants.FirstOrDefault(variant => variant.Assignments.Contains(assignment, StringComparer.OrdinalIgnoreCase))?.Configuration;
-
+            //
+            // Check audience assignment
             if (result == null)
             {
-                result = settings.Variants.FirstOrDefault(variant => variant.Name.Equals("Default", StringComparison.OrdinalIgnoreCase))?.Configuration;
+                foreach (IFeatureVariantSettings variant in settings.Variants)
+                {
+                    Dictionary<string, int> bucketAssignments = new Dictionary<string, int>();
+
+                    if (variant.Targeting?.AudienceRollouts == null)
+                    {
+                        continue;
+                    }
+
+                    foreach (AudienceRolloutSettings audience in variant.Targeting.AudienceRollouts)
+                    {
+                        if (!_userAccessor.Audiences.Contains(audience.Audience, StringComparer.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+
+                        if (!bucketAssignments.TryGetValue(audience.Audience, out int bucketAssignment))
+                        {
+                            string key = (rolloutId ?? feature) + "\n" + audience.Audience + "\n" + username;
+
+                            uint hash = unchecked((uint)key.GetStableHashCode());
+
+                            double res = ((double) hash / ((double) uint.MaxValue)) * (double) 100;
+
+                            bucketAssignment = (int)res;
+                        }
+
+                        bucketAssignment -= audience.Percentage;
+
+                        if (bucketAssignment < 0)
+                        {
+                            result = variant.Configuration;
+
+                            break;
+                        }
+
+                        bucketAssignments[audience.Audience] = bucketAssignment;
+                    }
+
+                    if (result != null)
+                    {
+                        break;
+                    }
+                }
+            }
+
+            //
+            // Check user rollout
+            if (result == null && !string.IsNullOrEmpty(username))
+            {
+                string key = (rolloutId ?? feature) + "\n" + username;
+
+                uint hash = unchecked((uint)key.GetStableHashCode());
+
+                double res = ((double)hash / ((double)uint.MaxValue)) * (double)100;
+
+                int bucketAssignment = (int)res;
+
+                foreach (IFeatureVariantSettings variant in settings.Variants)
+                {
+                    bucketAssignment -= variant.Targeting?.DefaultRollout?.Percentage ?? 0;
+
+                    if (bucketAssignment < 0)
+                    {
+                        result = variant.Configuration;
+
+                        break;
+                    }
+                }
+            }
+
+            //
+            // Assign default
+            if (result == null)
+            {
+                result = settings.Variants.FirstOrDefault(variant => variant.Default ||
+                                                                     variant.Name.Equals("Default", StringComparison.OrdinalIgnoreCase))?.Configuration;
             }
 
             return result ?? new ConfigurationRoot(new List<IConfigurationProvider>());
@@ -181,22 +259,6 @@ namespace Microsoft.FeatureManagement
             );
 
             return filter;
-        }
-
-        private string GetFeatureAssignerName(IFeatureAssigner assigner)
-        {
-            const string assignerSuffix = "assigner";
-
-            Type t = assigner.GetType();
-
-            string name = ((FilterAliasAttribute)Attribute.GetCustomAttribute(t, typeof(FilterAliasAttribute)))?.Alias;
-
-            if (name == null)
-            {
-                name = t.Name.EndsWith(assignerSuffix, StringComparison.OrdinalIgnoreCase) ? t.Name.Substring(0, t.Name.Length - assignerSuffix.Length) : t.Name;
-            }
-
-            return name;
         }
     }
 }

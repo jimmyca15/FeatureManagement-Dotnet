@@ -21,45 +21,6 @@ namespace Microsoft.FeatureManagement
             _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         }
 
-        public IAssignerSettings TryGetAssignerSettings(string assignerName)
-        {
-            IConfigurationSection configuration = _configuration.GetSection("FeatureAssignment:Assigners");
-
-            IEnumerable<IConfigurationSection> assignerSections = configuration.GetChildren();
-
-            AssignerSettings settings = new AssignerSettings
-            {
-                Name = assignerName
-            };
-
-            List<AssignmentChoice> assignments = new List<AssignmentChoice>();
-
-            foreach (IConfigurationSection section in assignerSections)
-            {
-                //
-                // Arrays in json such as "myKey": [ "some", "values" ]
-                // Are accessed through the configuration system by using the array index as the property name, e.g. "myKey": { "0": "some", "1": "values" }
-                if (int.TryParse(section.Key, out int _) && !string.IsNullOrEmpty(section["Name"]) && assignerName.Equals(section["Name"], StringComparison.OrdinalIgnoreCase))
-                {
-                    foreach (IConfigurationSection subSection in section.GetSection("AssignmentChoices").GetChildren())
-                    {
-                        if (int.TryParse(subSection.Key, out int __) && !string.IsNullOrEmpty(subSection["Name"]))
-                        {
-                            assignments.Add(new AssignmentChoice
-                            {
-                                Name = subSection["Name"],
-                                Parameters = subSection.GetSection("Parameters")
-                            });
-                        }
-                    }
-                }
-            }
-
-            settings.AssignmentChoices = assignments;
-
-            return settings;
-        }
-
         public IFeatureSettings TryGetFeatureSettings(string featureName)
         {
             /*
@@ -135,20 +96,23 @@ namespace Microsoft.FeatureManagement
                 }
             }
 
-            List<FeatureVariant> variants = new List<FeatureVariant>();
+            List<FeatureVariantSettings> variants = new List<FeatureVariantSettings>();
 
-            foreach (IConfigurationSection section in configuration.GetSection("Variants").GetChildren())
+            foreach (IConfigurationSection section in configuration.GetSection("Variation").GetChildren())
             {
-                if (int.TryParse(section.Key, out int i) && !string.IsNullOrEmpty(section[nameof(FeatureFilterSettings.Name)]))
-                {
-                    variants.Add(new FeatureVariant
-                    {
-                        Name = section[nameof(FeatureFilterSettings.Name)],
-                        TrackingId = null,
-                        Assignments = section.GetSection("Assignments").Get<List<string>>() ?? new List<string>(),
-                        Configuration = section.GetSection("Configuration")
-                    });
-                }
+                FeatureVariantSettings variantSettings = new FeatureVariantSettings();
+
+                variantSettings.Name = section.Key;
+
+                variantSettings.TrackingId = null;
+
+                variantSettings.Default = section.GetValue<bool>("Default", false);
+
+                variantSettings.Targeting = section.GetSection("Targeting").Get<TargetingSettings>() ?? new TargetingSettings();
+
+                variantSettings.Configuration = section.GetSection("Configuration");
+
+                variants.Add(variantSettings);
             }
 
             return new FeatureSettings()

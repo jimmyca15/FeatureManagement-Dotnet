@@ -1,0 +1,63 @@
+﻿@model List<MultiUserSettings>;
+<h2>@ViewData["Title"]</h2>
+<h3>@ViewData["Message"]</h3>
+
+@{
+    int i = 0;
+    int colCount = 0;
+
+    foreach (var setting in Model)
+    {
+
+        if (i == 0)
+        {
+            <h1>RING 0</h1>
+
+            colCount = 0;
+        }
+
+        if (i == 10)
+        {
+            @Html.Raw("</div>")
+            <h1>RING 1</h1>
+
+            colCount = 0;
+        }
+
+        if (i == 40)
+        {
+            @Html.Raw("</div>")
+            <h1>RING 2</h1>
+
+            colCount = 0;
+        }
+
+        if (colCount == 0)
+        {
+            @Html.Raw("<div class=\"row\">")
+        }
+
+            <div class="col-sm-2" style="overflow:hidden">
+                User: @setting.UserName
+
+                <div>
+                    <div id="AboutBox">
+                        <div style="text-align: center;width:120px;height:90px;background-color:@(setting.AboutBoxSettings.BorderColor)">
+                            Abc
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+        colCount++;
+
+        if ((colCount == 6 || i == Model.Count - 1) && i != 39 && i != 9)
+        {
+            @Html.Raw("</div>")
+
+            colCount = 0;
+        }
+
+        i++;
+    }
+}
