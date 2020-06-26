@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 //
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Extensions.DependencyInjection;
 using System;
@@ -94,31 +96,60 @@ namespace Microsoft.FeatureManagement.Mvc
         public RequirementType RequirementType { get; }
 
         /// <summary>
-        /// Performs controller action pre-procesing to ensure that at least one of the specified features are enabled.
+        /// Performs controller action pre-procesing to ensure that at least one of the specified features are enabled before enabling the action.
         /// </summary>
         /// <param name="context">The context of the MVC action.</param>
         /// <param name="next">The action delegate.</param>
         /// <returns>Returns a task representing the action execution unit of work.</returns>
         public override async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
         {
-            IFeatureManagerSnapshot fm = context.HttpContext.RequestServices.GetRequiredService<IFeatureManagerSnapshot>();
-
-            //
-            // Enabled state is determined by either 'any' or 'all' features being enabled.
-            bool enabled = RequirementType == RequirementType.All ?
-                             await Features.All(async feature => await fm.IsEnabledAsync(feature).ConfigureAwait(false)) :
-                             await Features.Any(async feature => await fm.IsEnabledAsync(feature).ConfigureAwait(false));
-
-            if (enabled)
+            if (!(await ShouldAllow(context.HttpContext)))
             {
-                await next().ConfigureAwait(false);
+                await HandleDisabledActionAsync(Features, context);
+            }
+
+            await base.OnActionExecutionAsync(context, next);
+        }
+
+        /// <summary>
+        /// Callback used to handle requests to an MVC action that are blocked due to a disabled feature.
+        /// </summary>
+        /// <param name="features">The name of the features that the action could have been activated for.</param>
+        /// <param name="context">The action executing context provided by MVC.</param>
+        /// <returns>The task.</returns>
+        protected virtual async Task HandleDisabledActionAsync(IEnumerable<string> features, ActionExecutingContext context)
+        {
+#pragma warning disable CS0618 // Type or member is obsolete
+            //
+            // We will continue to support the original disabled features handler approach for MVC actions until a future major version bump. 
+            // Consumers are still free to use the new intended approach of inheriting FeatureGateAttribute and overriding this method.
+            IDisabledFeaturesHandler disabledFeaturesHandler = context.HttpContext.RequestServices.GetService<IDisabledFeaturesHandler>();
+#pragma warning restore CS0618 // Type or member is obsolete
+            
+            if (disabledFeaturesHandler != null)
+            {
+                await disabledFeaturesHandler.HandleDisabledFeatures(Features, context).ConfigureAwait(false);
             }
             else
             {
-                IDisabledFeaturesHandler disabledFeaturesHandler = context.HttpContext.RequestServices.GetService<IDisabledFeaturesHandler>() ?? new NotFoundDisabledFeaturesHandler();
-
-                await disabledFeaturesHandler.HandleDisabledFeatures(Features, context).ConfigureAwait(false);
+                context.Result = new StatusCodeResult(StatusCodes.Status404NotFound);
             }
+        }
+
+        /// <summary>
+        /// Tests whether the targeted action/page handler should be allowed to continue based on the designated feature and requirement type.
+        /// </summary>
+        /// <param name="context">The current HTTP Context.</param>
+        /// <returns>True if the action/page handler should be allowed to continue, otherwise false.</returns>
+        protected async Task<bool> ShouldAllow(HttpContext context)
+        {
+            IFeatureManagerSnapshot fm = context.RequestServices.GetRequiredService<IFeatureManagerSnapshot>();
+
+            //
+            // Enabled state is determined by either 'any' or 'all' features being enabled.
+            return RequirementType == RequirementType.All ?
+                        await Features.All(async feature => await fm.IsEnabledAsync(feature).ConfigureAwait(false)) :
+                        await Features.Any(async feature => await fm.IsEnabledAsync(feature).ConfigureAwait(false));
         }
     }
 }

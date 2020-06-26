@@ -11,9 +11,14 @@ using Microsoft.FeatureManagement.Mvc;
 
 namespace FeatureFlagDemo.FeatureManagement
 {
-    public class FeatureNotEnabledDisabledHandler : IDisabledFeaturesHandler
+    public class DetailedFeatureGateAttribute : FeatureGateAttribute
     {
-        public Task HandleDisabledFeatures(IEnumerable<string> features, ActionExecutingContext context)
+        public DetailedFeatureGateAttribute(params object[] features)
+            : base(features)
+        {
+        }
+
+        protected override Task HandleDisabledActionAsync(IEnumerable<string> features, ActionExecutingContext context)
         {
             var result = new ViewResult()
             {
@@ -23,7 +28,7 @@ namespace FeatureFlagDemo.FeatureManagement
 
             result.ViewData["FeatureName"] = string.Join(", ", features);
 
-            context.Result = result;
+            //context.Result = result;
 
             return Task.CompletedTask;
         }

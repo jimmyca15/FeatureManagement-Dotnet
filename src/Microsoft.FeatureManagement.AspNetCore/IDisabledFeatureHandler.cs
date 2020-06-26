@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 //
 using Microsoft.AspNetCore.Mvc.Filters;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
@@ -10,6 +11,7 @@ namespace Microsoft.FeatureManagement.Mvc
     /// <summary>
     /// A handler that is invoked when an MVC action requires a feature and the feature is not enabled.
     /// </summary>
+    [Obsolete("IDisabledFeaturesHandler is deprecated. To customize the behavior when disabled features are accessed please extend FeatureGateAttribute and override the relevant methods.")]
     public interface IDisabledFeaturesHandler
     {
         /// <summary>

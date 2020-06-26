@@ -22,19 +22,19 @@ namespace FeatureFlagDemo
                 {
                     var settings = builder.Build();
 
-                    if (!string.IsNullOrEmpty(settings["AppConfiguration:ConnectionString"]))
-                    {
-                        //
-                        // This section can be used to pull feature flag configuration from Azure App Configuration
-                        builder.AddAzureAppConfiguration(o =>
-                        {
-                            o.Connect(settings["AppConfiguration:ConnectionString"]);
+                    //if (!string.IsNullOrEmpty(settings["AppConfiguration:ConnectionString"]))
+                    //{
+                    //    //
+                    //    // This section can be used to pull feature flag configuration from Azure App Configuration
+                    //    builder.AddAzureAppConfiguration(o =>
+                    //    {
+                    //        o.Connect(settings["AppConfiguration:ConnectionString"]);
 
-                            o.Select(KeyFilter.Any);
+                    //        o.Select(KeyFilter.Any);
 
-                            o.UseFeatureFlags();
-                        });
-                    }
+                    //        o.UseFeatureFlags();
+                    //    });
+                    //}
                 })
                 .UseStartup<Startup>();
         }

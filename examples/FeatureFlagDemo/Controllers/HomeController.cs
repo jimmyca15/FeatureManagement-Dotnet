@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using FeatureFlagDemo.Models;
+using FeatureFlagDemo.FeatureManagement;
 using Microsoft.AspNetCore.Http;
 using Microsoft.FeatureManagement;
 using Microsoft.FeatureManagement.Mvc;
@@ -20,7 +21,12 @@ namespace FeatureFlagDemo.Controllers
             _featureManager = featureSnapshot;
         }
 
-        [FeatureGate(MyFeatureFlags.Home)]
+        //
+        // Actions can require a feature to be enabled by using the provided FeatureGateAttribute
+        // [FeatureGate(MyFeatureFlags.Home)]
+        //
+        // Optionally, the feature gate can be extended for customized responses like below
+        [DetailedFeatureGate(MyFeatureFlags.Home)]
         public IActionResult Index()
         {
             return View();

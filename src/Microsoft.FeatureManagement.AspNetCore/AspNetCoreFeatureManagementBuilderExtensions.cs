@@ -21,6 +21,7 @@ namespace Microsoft.FeatureManagement
         /// <param name="builder">The feature management builder.</param>
         /// <param name="disabledFeaturesHandler">The disabled feature handler.</param>
         /// <returns>The feature management builder.</returns>
+        [Obsolete("IDisabledFeaturesHandler is deprecated. To customize the behavior when disabled features are accessed please extend FeatureGateAttribute and override the relevant methods.")]
         public static IFeatureManagementBuilder UseDisabledFeaturesHandler(this IFeatureManagementBuilder builder, IDisabledFeaturesHandler disabledFeaturesHandler)
         {
             builder.Services.AddSingleton<IDisabledFeaturesHandler>(disabledFeaturesHandler ?? throw new ArgumentNullException(nameof(disabledFeaturesHandler)));
@@ -34,6 +35,7 @@ namespace Microsoft.FeatureManagement
         /// <param name="builder">The feature management builder.</param>
         /// <param name="handler">The inline handler for disabled features.</param>
         /// <returns>The feature management builder.</returns>
+        [Obsolete("IDisabledFeaturesHandler is deprecated. To customize the behavior when disabled features are accessed please extend FeatureGateAttribute and override the relevant methods.")]
         public static IFeatureManagementBuilder UseDisabledFeaturesHandler(this IFeatureManagementBuilder builder, Action<IEnumerable<string>, ActionExecutingContext> handler)
         {
             if (handler == null)
