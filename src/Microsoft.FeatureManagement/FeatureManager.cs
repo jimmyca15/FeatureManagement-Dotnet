@@ -80,7 +80,7 @@ namespace Microsoft.FeatureManagement
                 // Check if feature is always on
                 // If it is, result is true, goto: cache
 
-                if (featureDefinition.EnabledFor.Any(featureFilter => string.Equals(featureFilter.Name, "AlwaysOn", StringComparison.OrdinalIgnoreCase)))
+                if (featureDefinition.EnabledFor.Any(featureFilter => string.Equals(featureFilter.Name, FeatureFilterConfiguration.AlwaysOn.Name, StringComparison.OrdinalIgnoreCase)))
                 {
                     enabled = true;
                 }

@@ -12,6 +12,14 @@ namespace Microsoft.FeatureManagement
     public class FeatureFilterConfiguration
     {
         /// <summary>
+        /// A feature filter configuration that results in the feature always being enabled.
+        /// </summary>
+        public static FeatureFilterConfiguration AlwaysOn = new FeatureFilterConfiguration
+        {
+            Name = "AlwaysOn"
+        };
+
+        /// <summary>
         /// The name of the feature filter.
         /// </summary>
         public string Name { get; set; }
