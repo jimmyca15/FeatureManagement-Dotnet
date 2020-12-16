@@ -3,6 +3,8 @@
 //
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.FeatureManagement.FeatureFilters;
+using Microsoft.FeatureManagement.Targeting;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -17,6 +19,7 @@ namespace Microsoft.FeatureManagement
     class FeatureManager : IFeatureManager
     {
         private readonly IFeatureDefinitionProvider _featureDefinitionProvider;
+        private readonly IFeatureVariantProvider _featureVariantProvider;
         private readonly IEnumerable<IFeatureFilterMetadata> _featureFilters;
         private readonly IEnumerable<ISessionManager> _sessionManagers;
         private readonly ILogger _logger;
@@ -26,12 +29,14 @@ namespace Microsoft.FeatureManagement
 
         public FeatureManager(
             IFeatureDefinitionProvider featureDefinitionProvider,
+            IFeatureVariantProvider featureVariantProvider,
             IEnumerable<IFeatureFilterMetadata> featureFilters,
             IEnumerable<ISessionManager> sessionManagers,
             ILoggerFactory loggerFactory,
             IOptions<FeatureManagementOptions> options)
         {
             _featureDefinitionProvider = featureDefinitionProvider;
+            _featureVariantProvider = featureVariantProvider;
             _featureFilters = featureFilters ?? throw new ArgumentNullException(nameof(featureFilters));
             _sessionManagers = sessionManagers ?? throw new ArgumentNullException(nameof(sessionManagers));
             _logger = loggerFactory.CreateLogger<FeatureManager>();
@@ -56,6 +61,108 @@ namespace Microsoft.FeatureManagement
             {
                 yield return featureDefintion.Name;
             }
+        }
+
+        public async ValueTask<T> GetVariantAsync<T, TContext>(string feature, TContext targetingContext) where TContext : ITargetingContext
+        {
+            if (feature == null)
+            {
+                throw new ArgumentNullException(nameof(feature));
+            }
+
+            if (targetingContext == null)
+            {
+                throw new ArgumentNullException(nameof(targetingContext));
+            }
+
+            FeatureDefinition featureDefinition = await _featureDefinitionProvider.GetFeatureDefinitionAsync(feature).ConfigureAwait(false);
+
+            if (featureDefinition == null)
+            {
+                return default(T);
+            }
+
+            FeatureVariant variant = null;
+
+            FeatureVariant defaultVariant = null;
+
+            double cumulativePercentage = 0;
+
+            var cumulativeGroups = new Dictionary<string, double>();
+
+            if (featureDefinition.Variants != null)
+            {
+                foreach (FeatureVariant v in featureDefinition.Variants)
+                {
+                    if (defaultVariant == null && v.Default)
+                    {
+                        defaultVariant = v;
+                    }
+
+                    Audience audience = AccumulateAudience(v.Audience, ref cumulativePercentage, ref cumulativeGroups);
+
+                    if (TargetingEvaluator.IsTargeted(audience, targetingContext, true, feature))
+                    {
+                        variant = v;
+
+                        break;
+                    }
+                }
+            }
+
+            if (variant == null)
+            {
+                variant = defaultVariant;
+            }
+
+            if (variant == null)
+            {
+                return default(T);
+            }
+
+            return await _featureVariantProvider.GetVariant<T>(featureDefinition, variant);
+        }
+
+        public async ValueTask<T> GetVariantAsync<T>(string feature)
+        {
+            ITargetingContextAccessor targetingContextAccessor = null;
+
+            return await GetVariantAsync<T, TargetingContext>(feature, await targetingContextAccessor.GetContextAsync());
+        }
+
+        private static Audience AccumulateAudience(Audience audience, ref double cumulativePercentage, ref Dictionary<string, double> cumulativeGroups)
+        {
+            Audience ret = new Audience();
+
+            ret.Users = audience.Users;
+
+            ret.Groups = new List<GroupRollout>();
+
+            foreach (GroupRollout gr in audience.Groups)
+            {
+                double percentage = gr.RolloutPercentage;
+
+                if (cumulativeGroups.TryGetValue(gr.Name, out double p))
+                {
+                    percentage += p;
+                }
+
+                percentage = Math.Min(percentage, 100);
+
+                cumulativeGroups[gr.Name] = percentage;
+
+                ret.Groups.Add(new GroupRollout
+                {
+                    Name = gr.Name,
+                    RolloutPercentage = percentage
+                });
+            }
+
+            cumulativePercentage = cumulativePercentage + audience.DefaultRolloutPercentage;
+
+            ret.DefaultRolloutPercentage = cumulativePercentage;
+
+            return ret;
         }
 
         private async Task<bool> IsEnabledAsync<TContext>(string feature, TContext appContext, bool useAppContext)

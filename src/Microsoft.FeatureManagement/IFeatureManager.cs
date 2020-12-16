@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 //
+using Microsoft.FeatureManagement.FeatureFilters;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
@@ -31,5 +32,9 @@ namespace Microsoft.FeatureManagement
         /// <param name="context">A context providing information that can be used to evaluate whether a feature should be on or off.</param>
         /// <returns>True if the feature is enabled, otherwise false.</returns>
         Task<bool> IsEnabledAsync<TContext>(string feature, TContext context);
+
+        ValueTask<T> GetVariantAsync<T>(string feature);
+
+        ValueTask<T> GetVariantAsync<T, TContext>(string feature, TContext targetingContext) where TContext : ITargetingContext;
     }
 }

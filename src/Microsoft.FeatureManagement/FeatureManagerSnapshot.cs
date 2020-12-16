@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 //
+using Microsoft.FeatureManagement.FeatureFilters;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -39,6 +40,16 @@ namespace Microsoft.FeatureManagement
             {
                 yield return featureName;
             }
+        }
+
+        public ValueTask<T> GetVariantAsync<T>(string feature)
+        {
+            throw new NotImplementedException();
+        }
+
+        public ValueTask<T> GetVariantAsync<T, TContext>(string feature, TContext targetingContext) where TContext : ITargetingContext
+        {
+            throw new NotImplementedException();
         }
 
         public async Task<bool> IsEnabledAsync(string feature)

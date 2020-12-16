@@ -64,6 +64,10 @@ namespace Consoto.Banking.HelpDesk
 
                     bool enabled = await featureManager.IsEnabledAsync(FeatureName, targetingContext);
 
+                    CartOptions cartOptions = await featureManager.GetVariantAsync<CartOptions, TargetingContext>("ShoppingCart", targetingContext);
+
+                    Console.WriteLine($"User {user.Id}'s cart size: {cartOptions.Size}.");
+
                     //
                     // Output results
                     Console.WriteLine($"The {FeatureName} feature is {(enabled ? "enabled" : "disabled")} for the user '{userId}'.");
