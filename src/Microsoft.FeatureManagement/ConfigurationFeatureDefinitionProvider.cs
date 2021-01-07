@@ -3,6 +3,7 @@
 //
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Primitives;
+using Microsoft.FeatureManagement.FeatureFilters;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -18,6 +19,7 @@ namespace Microsoft.FeatureManagement
     sealed class ConfigurationFeatureDefinitionProvider : IFeatureDefinitionProvider, IDisposable
     {
         private const string FeatureFiltersSectionName = "EnabledFor";
+        private const string FeatureVariantsSectionName = "Variants";
         private readonly IConfiguration _configuration;
         private readonly ConcurrentDictionary<string, FeatureDefinition> _definitions;
         private IDisposable _changeSubscription;
@@ -127,6 +129,8 @@ namespace Microsoft.FeatureManagement
 
             var enabledFor = new List<FeatureFilterConfiguration>();
 
+            var variants = new List<FeatureVariant>();
+
             string val = configurationSection.Value; // configuration[$"{featureName}"];
 
             if (string.IsNullOrEmpty(val))
@@ -165,12 +169,32 @@ namespace Microsoft.FeatureManagement
                         });
                     }
                 }
+
+                IEnumerable<IConfigurationSection> variantSections = configurationSection.GetSection(FeatureVariantsSectionName).GetChildren();
+
+                foreach (IConfigurationSection section in variantSections)
+                {
+                    if (int.TryParse(section.Key, out int i) && !string.IsNullOrEmpty(section[nameof(FeatureFilterConfiguration.Name)]))
+                    {
+                        FeatureVariant variant = new FeatureVariant();
+
+                        variant.Default = section.GetValue<bool>("Default");
+
+                        variant.Name = section.GetValue<string>("Name");
+
+                        variant.Audience = section.GetSection("Audience").Get<Audience>();
+
+                        variants.Add(variant);
+                    }
+                }
+
             }
 
             return new FeatureDefinition()
             {
                 Name = configurationSection.Key,
-                EnabledFor = enabledFor
+                EnabledFor = enabledFor,
+                Variants = variants
             };
         }
 
