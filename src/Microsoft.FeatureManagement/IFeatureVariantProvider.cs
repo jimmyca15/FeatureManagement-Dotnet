@@ -2,7 +2,7 @@
 
 namespace Microsoft.FeatureManagement
 {
-    interface IFeatureVariantProvider
+    public interface IFeatureVariantProvider
     {
         ValueTask<T> GetVariant<T>(FeatureDefinition featureDefinition, FeatureVariant variant);
     }

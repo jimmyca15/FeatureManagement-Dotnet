@@ -28,6 +28,8 @@ namespace Microsoft.FeatureManagement
 
             services.TryAddSingleton<IFeatureVariantProvider, ConfigurationFeatureVariantProvider>();
 
+            services.TryAddSingleton<IFeatureVariantResolver, TargetingFeatureVariantResolver>();
+
             services.AddSingleton<IFeatureManager, FeatureManager>();
 
             services.AddSingleton<ISessionManager, EmptySessionManager>();
