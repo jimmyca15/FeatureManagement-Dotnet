@@ -32,7 +32,7 @@ namespace FeatureFlagDemo
 
                             o.Select(KeyFilter.Any);
 
-                            o.UseFeatureFlags();
+                            o.UseFeatureFlags(fo => fo.CacheExpirationTime = System.TimeSpan.FromSeconds(1));
                         });
                     }
                 })

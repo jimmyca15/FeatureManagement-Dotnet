@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 //
 using Microsoft.Extensions.Configuration;
+using System.Threading;
 
 namespace Microsoft.FeatureManagement
 {
@@ -19,5 +20,10 @@ namespace Microsoft.FeatureManagement
         /// The settings provided for the feature filter to use when evaluating whether the feature should be enabled.
         /// </summary>
         public IConfiguration Parameters { get; set; }
+
+        /// <summary>
+        /// Denotes if the evaluation of a feature should be aborted.
+        /// </summary>
+        public CancellationToken EvaluationAborted { get; set; }
     }
 }

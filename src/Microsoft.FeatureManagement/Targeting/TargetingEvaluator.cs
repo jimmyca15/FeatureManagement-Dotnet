@@ -6,15 +6,15 @@ using System.Text;
 
 namespace Microsoft.FeatureManagement.Targeting
 {
-    class TargetingEvaluator
+    static class TargetingEvaluator
     {
         private static StringComparison ComparisonType(bool ignoreCase) => ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
-        public static bool IsTargeted(Audience audience, ITargetingContext targetingContext, bool ignoreCase, string hint)
+        public static bool IsTargeted(TargetingFilterSettings settings, ITargetingContext targetingContext, bool ignoreCase, string hint)
         {
-            if (audience == null)
+            if (settings == null)
             {
-                throw new ArgumentNullException(nameof(audience));
+                throw new ArgumentNullException(nameof(settings));
             }
 
             if (targetingContext == null)
@@ -22,14 +22,16 @@ namespace Microsoft.FeatureManagement.Targeting
                 throw new ArgumentNullException(nameof(targetingContext));
             }
 
-            ValidateAudience(audience);
-
+            if (!TryValidateSettings(settings, out string paramName, out string reason))
+            {
+                throw new ArgumentException(reason, paramName);
+            }
 
             //
             // Check if the user is being targeted directly
             if (targetingContext.UserId != null &&
-                audience.Users != null &&
-                audience.Users.Any(user => targetingContext.UserId.Equals(user, ComparisonType(ignoreCase))))
+                settings.Audience.Users != null &&
+                settings.Audience.Users.Any(user => targetingContext.UserId.Equals(user, ComparisonType(ignoreCase))))
             {
                 return true;
             }
@@ -37,11 +39,11 @@ namespace Microsoft.FeatureManagement.Targeting
             //
             // Check if the user is in a group that is being targeted
             if (targetingContext.Groups != null &&
-                audience.Groups != null)
+                settings.Audience.Groups != null)
             {
                 foreach (string group in targetingContext.Groups)
                 {
-                    GroupRollout groupRollout = audience.Groups.FirstOrDefault(g => g.Name.Equals(group, ComparisonType(ignoreCase)));
+                    GroupRollout groupRollout = settings.Audience.Groups.FirstOrDefault(g => g.Name.Equals(group, ComparisonType(ignoreCase)));
 
                     if (groupRollout != null)
                     {
@@ -59,7 +61,7 @@ namespace Microsoft.FeatureManagement.Targeting
             // Check if the user is being targeted by a default rollout percentage
             string defaultContextId = $"{targetingContext.UserId}\n{hint}";
 
-            return IsTargeted(defaultContextId, audience.DefaultRolloutPercentage);
+            return IsTargeted(defaultContextId, settings.Audience.DefaultRolloutPercentage);
         }
 
 
@@ -88,27 +90,55 @@ namespace Microsoft.FeatureManagement.Targeting
             return contextPercentage < percentage;
         }
 
-        private static bool ValidateAudience(Audience audience)
+        /// <summary>
+        /// Performs validation of targeting settings.
+        /// </summary>
+        /// <param name="targetingSettings">The settings to validate.</param>
+        /// <param name="paramName">The name of the invalid setting, if any.</param>
+        /// <param name="reason">The reason that the setting is invalid.</param>
+        /// <returns>True if the provided settings are valid. False if the provided settings are invalid.</returns>
+        private static bool TryValidateSettings(TargetingFilterSettings targetingSettings, out string paramName, out string reason)
         {
             const string OutOfRange = "The value is out of the accepted range.";
 
-            if (audience == null)
+            const string RequiredParameter = "Value cannot be null.";
+
+            paramName = null;
+
+            reason = null;
+
+            if (targetingSettings == null)
             {
-                throw new ArgumentNullException(nameof(audience));
+                paramName = nameof(targetingSettings);
+
+                reason = RequiredParameter;
+
+                return false;
             }
 
-            if (audience.DefaultRolloutPercentage < 0 || audience.DefaultRolloutPercentage > 100)
+            if (targetingSettings.Audience == null)
             {
-                string paramName = $"{audience}.{audience.DefaultRolloutPercentage}";
+                paramName = nameof(targetingSettings.Audience);
 
-                throw new ArgumentException(OutOfRange, paramName);
+                reason = RequiredParameter;
+
+                return false;
             }
 
-            if (audience.Groups != null)
+            if (targetingSettings.Audience.DefaultRolloutPercentage < 0 || targetingSettings.Audience.DefaultRolloutPercentage > 100)
+            {
+                paramName = $"{targetingSettings.Audience}.{targetingSettings.Audience.DefaultRolloutPercentage}";
+
+                reason = OutOfRange;
+
+                return false;
+            }
+
+            if (targetingSettings.Audience.Groups != null)
             {
                 int index = 0;
 
-                foreach (GroupRollout groupRollout in audience.Groups)
+                foreach (GroupRollout groupRollout in targetingSettings.Audience.Groups)
                 {
                     index++;
 
@@ -116,9 +146,11 @@ namespace Microsoft.FeatureManagement.Targeting
                     {
                         //
                         // Audience.Groups[1].RolloutPercentage
-                        string paramName = $"{audience}.{audience.Groups}[{index}].{groupRollout.RolloutPercentage}";
+                        paramName = $"{targetingSettings.Audience}.{targetingSettings.Audience.Groups}[{index}].{groupRollout.RolloutPercentage}";
 
-                        throw new ArgumentException(OutOfRange, paramName);
+                        reason = OutOfRange;
+
+                        return false;
                     }
                 }
             }

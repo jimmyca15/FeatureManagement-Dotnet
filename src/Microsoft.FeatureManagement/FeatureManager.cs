@@ -3,12 +3,12 @@
 //
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Microsoft.FeatureManagement.FeatureFilters;
-using Microsoft.FeatureManagement.Targeting;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Microsoft.FeatureManagement
@@ -16,43 +16,66 @@ namespace Microsoft.FeatureManagement
     /// <summary>
     /// Used to evaluate whether a feature is enabled or disabled.
     /// </summary>
-    class FeatureManager : IFeatureManager
+    class FeatureManager : IFeatureManager, IFeatureManager2
     {
-        private readonly IFeatureDefinitionProvider _featureDefinitionProvider;
-        private readonly IFeatureVariantResolver _featureVariantResolver;
+        private readonly FeatureDefinitionProviderWrapper _featureDefinitionProvider;
         private readonly IEnumerable<IFeatureFilterMetadata> _featureFilters;
+        private readonly IEnumerable<IFeatureVariantAssignerMetadata> _variantAssigners;
+        private readonly IFeatureVariantOptionsResolver _variantOptionsResolver;
         private readonly IEnumerable<ISessionManager> _sessionManagers;
         private readonly ILogger _logger;
         private readonly ConcurrentDictionary<string, IFeatureFilterMetadata> _filterMetadataCache;
+        private readonly ConcurrentDictionary<string, IFeatureVariantAssignerMetadata> _assignerMetadataCache;
         private readonly ConcurrentDictionary<string, ContextualFeatureFilterEvaluator> _contextualFeatureFilterCache;
+        private readonly ConcurrentDictionary<string, ContextualFeatureVariantAssignerEvaluator> _contextualFeatureVariantAssignerCache;
         private readonly FeatureManagementOptions _options;
 
         public FeatureManager(
             IFeatureDefinitionProvider featureDefinitionProvider,
-            IFeatureVariantResolver featureVariantResolver,
             IEnumerable<IFeatureFilterMetadata> featureFilters,
+            IEnumerable<IFeatureVariantAssignerMetadata> variantAssigner,
+            IFeatureVariantOptionsResolver variantOptionsResolver,
             IEnumerable<ISessionManager> sessionManagers,
             ILoggerFactory loggerFactory,
             IOptions<FeatureManagementOptions> options)
         {
-            _featureDefinitionProvider = featureDefinitionProvider ?? throw new ArgumentNullException(nameof(featureDefinitionProvider));
-            _featureVariantResolver = featureVariantResolver ?? throw new ArgumentNullException(nameof(featureVariantResolver));
             _featureFilters = featureFilters ?? throw new ArgumentNullException(nameof(featureFilters));
+            _variantAssigners = variantAssigner ?? throw new ArgumentNullException(nameof(variantAssigner));
+            _variantOptionsResolver = variantOptionsResolver ?? throw new ArgumentNullException(nameof(variantOptionsResolver));
             _sessionManagers = sessionManagers ?? throw new ArgumentNullException(nameof(sessionManagers));
             _logger = loggerFactory.CreateLogger<FeatureManager>();
             _filterMetadataCache = new ConcurrentDictionary<string, IFeatureFilterMetadata>();
             _contextualFeatureFilterCache = new ConcurrentDictionary<string, ContextualFeatureFilterEvaluator>();
+            _assignerMetadataCache = new ConcurrentDictionary<string, IFeatureVariantAssignerMetadata>();
+            _contextualFeatureVariantAssignerCache = new ConcurrentDictionary<string, ContextualFeatureVariantAssignerEvaluator>();
             _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+
+            if (featureDefinitionProvider == null)
+            {
+                throw new ArgumentNullException(nameof(featureDefinitionProvider));
+            }
+
+            _featureDefinitionProvider = new FeatureDefinitionProviderWrapper(featureDefinitionProvider);
         }
 
         public Task<bool> IsEnabledAsync(string feature)
         {
-            return IsEnabledAsync<object>(feature, null, false);
+            return IsEnabledAsync<object>(feature, null, false, CancellationToken.None).AsTask();
         }
 
         public Task<bool> IsEnabledAsync<TContext>(string feature, TContext appContext)
         {
-            return IsEnabledAsync(feature, appContext, true);
+            return IsEnabledAsync(feature, appContext, true, CancellationToken.None).AsTask();
+        }
+
+        public ValueTask<bool> IsEnabledAsync(string feature, CancellationToken cancellationToken)
+        {
+            return IsEnabledAsync<object>(feature, null, false, cancellationToken);
+        }
+
+        public ValueTask<bool> IsEnabledAsync<TContext>(string feature, TContext appContext, CancellationToken cancellationToken)
+        {
+            return IsEnabledAsync(feature, appContext, true, cancellationToken);
         }
 
         public async IAsyncEnumerable<string> GetFeatureNamesAsync()
@@ -63,31 +86,95 @@ namespace Microsoft.FeatureManagement
             }
         }
 
-        public async ValueTask<T> GetVariantAsync<T, TContext>(string feature, TContext targetingContext) where TContext : ITargetingContext
+        public ValueTask<T> GetVariantAsync<T, TContext>(string feature, TContext appContext, CancellationToken cancellationToken)
+        {
+            return GetVariantAsync<T, TContext>(feature, appContext, true, cancellationToken);
+        }
+
+        public ValueTask<T> GetVariantAsync<T>(string feature, CancellationToken cancellationToken)
+        {
+            return GetVariantAsync<T, object>(feature, null, false, cancellationToken);
+        }
+
+        private async ValueTask<T> GetVariantAsync<T, TContext>(string feature, TContext appContext, bool useAppContext, CancellationToken cancellationToken)
         {
             if (feature == null)
             {
                 throw new ArgumentNullException(nameof(feature));
             }
 
-            if (targetingContext == null)
+            FeatureVariant variant = null;
+
+            FeatureDefinition featureDefinition = await _featureDefinitionProvider.GetFeatureDefinitionAsync(feature, cancellationToken).ConfigureAwait(false);
+
+            if (featureDefinition != null)
             {
-                throw new ArgumentNullException(nameof(targetingContext));
+                IFeatureVariantAssignerMetadata assigner = GetFeatureAssignerMetadata(featureDefinition.Assigner);
+
+                if (assigner == null)
+                {
+                    string errorMessage = $"The feature assigner '{featureDefinition.Assigner}' specified for feature '{feature}' was not found.";
+
+                    if (!_options.IgnoreMissingFeatureAssigners)
+                    {
+                        throw new FeatureManagementException(FeatureManagementError.MissingFeatureAssigner, errorMessage);
+                    }
+                    else
+                    {
+                        _logger.LogWarning(errorMessage);
+
+                        return default(T);
+                    }
+                }
+
+                var context = new FeatureVariantAssignmentContext()
+                {
+                    FeatureDefinition = featureDefinition,
+                    EvaluationAborted = cancellationToken
+                };
+
+                //
+                // IContextualFeatureVariantAssigner
+                if (useAppContext)
+                {
+                    ContextualFeatureVariantAssignerEvaluator contextualAssigner = GetContextualFeatureVariantAssigner(featureDefinition.Assigner, typeof(TContext));
+
+                    if (contextualAssigner != null)
+                    {
+                        variant = await contextualAssigner.AssignVariantAsync(context, appContext).ConfigureAwait(false);
+                    }
+                }
+
+                //
+                // IFeatureVariantAssigner
+                if (assigner is IFeatureVariantAssigner featureVariantAssigner)
+                {
+                    variant = await featureVariantAssigner.AssignVariantAsync(context).ConfigureAwait(false);
+                }
+            
+                if (variant == null &&
+                    featureDefinition.Variants != null)
+                {
+                    variant = featureDefinition.Variants.FirstOrDefault(v => v.Default);
+                }
             }
 
-            FeatureDefinition featureDefinition = await _featureDefinitionProvider.GetFeatureDefinitionAsync(feature).ConfigureAwait(false);
+            if (variant == null)
+            {
+                return default(T);
+            }
 
-            return await _featureVariantResolver.ResolveVariant<T>(featureDefinition, targetingContext).ConfigureAwait(false);
+            if (variant.ConfigurationReference == null)
+            {
+                throw new FeatureManagementException(
+                    FeatureManagementError.MissingConfigurationReference,
+                    $"The variant '{variant.Name}' for the feature '{feature}' does not have an options reference.");
+            }
+
+            return await _variantOptionsResolver.GetOptions<T>(featureDefinition, variant, cancellationToken).ConfigureAwait(false);
         }
 
-        public async ValueTask<T> GetVariantAsync<T>(string feature)
-        {
-            ITargetingContextAccessor targetingContextAccessor = null;
-
-            return await GetVariantAsync<T, TargetingContext>(feature, await targetingContextAccessor.GetContextAsync());
-        }
-
-        private async Task<bool> IsEnabledAsync<TContext>(string feature, TContext appContext, bool useAppContext)
+        private async ValueTask<bool> IsEnabledAsync<TContext>(string feature, TContext appContext, bool useAppContext, CancellationToken cancellationToken)
         {
             foreach (ISessionManager sessionManager in _sessionManagers)
             {
@@ -101,7 +188,7 @@ namespace Microsoft.FeatureManagement
 
             bool enabled = false;
 
-            FeatureDefinition featureDefinition = await _featureDefinitionProvider.GetFeatureDefinitionAsync(feature).ConfigureAwait(false);
+            FeatureDefinition featureDefinition = await _featureDefinitionProvider.GetFeatureDefinitionAsync(feature, cancellationToken).ConfigureAwait(false);
 
             if (featureDefinition != null)
             {
@@ -142,7 +229,8 @@ namespace Microsoft.FeatureManagement
                         var context = new FeatureFilterEvaluationContext()
                         {
                             FeatureName = feature,
-                            Parameters = featureFilterConfiguration.Parameters 
+                            Parameters = featureFilterConfiguration.Parameters,
+                            EvaluationAborted = cancellationToken
                         };
 
                         //
@@ -181,41 +269,15 @@ namespace Microsoft.FeatureManagement
 
         private IFeatureFilterMetadata GetFeatureFilterMetadata(string filterName)
         {
-            const string filterSuffix = "filter";
-
             IFeatureFilterMetadata filter = _filterMetadataCache.GetOrAdd(
                 filterName,
                 (_) => {
 
                     IEnumerable<IFeatureFilterMetadata> matchingFilters = _featureFilters.Where(f =>
                     {
-                        Type t = f.GetType();
+                        string name = GetMetadataName(f.GetType());
 
-                        string name = ((FilterAliasAttribute)Attribute.GetCustomAttribute(t, typeof(FilterAliasAttribute)))?.Alias;
-
-                        if (name == null)
-                        {
-                            name = t.Name.EndsWith(filterSuffix, StringComparison.OrdinalIgnoreCase) ? t.Name.Substring(0, t.Name.Length - filterSuffix.Length) : t.Name;
-                        }
-
-                        //
-                        // Feature filters can have namespaces in their alias
-                        // If a feature is configured to use a filter without a namespace such as 'MyFilter', then it can match 'MyOrg.MyProduct.MyFilter' or simply 'MyFilter'
-                        // If a feature is configured to use a filter with a namespace such as 'MyOrg.MyProduct.MyFilter' then it can only match 'MyOrg.MyProduct.MyFilter' 
-                        if (filterName.Contains('.'))
-                        {
-                            //
-                            // The configured filter name is namespaced. It must be an exact match.
-                            return string.Equals(name, filterName, StringComparison.OrdinalIgnoreCase);
-                        }
-                        else
-                        {
-                            //
-                            // We take the simple name of a filter, E.g. 'MyFilter' for 'MyOrg.MyProduct.MyFilter'
-                            string simpleName = name.Contains('.') ? name.Split('.').Last() : name;
-
-                            return string.Equals(simpleName, filterName, StringComparison.OrdinalIgnoreCase);
-                        }
+                        return IsMatchingMetadataName(name, filterName);
                     });
 
                     if (matchingFilters.Count() > 1)
@@ -228,6 +290,79 @@ namespace Microsoft.FeatureManagement
             );
 
             return filter;
+        }
+
+        private IFeatureVariantAssignerMetadata GetFeatureAssignerMetadata(string assignerName)
+        {
+            IFeatureVariantAssignerMetadata assigner = _assignerMetadataCache.GetOrAdd(
+                assignerName,
+                (_) => {
+
+                    IEnumerable<IFeatureVariantAssignerMetadata> matchingAssigners = _variantAssigners.Where(f =>
+                    {
+                        string name = GetMetadataName(f.GetType());
+
+                        return IsMatchingMetadataName(name, assignerName);
+                    });
+
+                    if (matchingAssigners.Count() > 1)
+                    {
+                        throw new FeatureManagementException(FeatureManagementError.AmbiguousFeatureFilter, $"Multiple feature filters match the configured filter named '{assignerName}'.");
+                    }
+
+                    return matchingAssigners.FirstOrDefault();
+                }
+            );
+
+            return assigner;
+        }
+
+        private static string GetMetadataName(Type type)
+        {
+            const string filterSuffix = "filter";
+            const string assignerSuffix = "assigner";
+
+            Debug.Assert(type != null);
+
+            string name = ((FilterAliasAttribute)Attribute.GetCustomAttribute(type, typeof(FilterAliasAttribute)))?.Alias;
+
+            if (name == null)
+            {
+                name = type.Name;
+
+                if (name.EndsWith(filterSuffix, StringComparison.OrdinalIgnoreCase))
+                {
+                    name = name.Substring(0, name.Length - filterSuffix.Length);
+                }
+                else if (name.EndsWith(assignerSuffix, StringComparison.OrdinalIgnoreCase))
+                {
+                    name = name.Substring(0, name.Length - assignerSuffix.Length);
+                }
+            }
+
+            return name;
+        }
+
+        private static bool IsMatchingMetadataName(string metadataName, string desiredName)
+        {
+            //
+            // Feature filters can have namespaces in their alias
+            // If a feature is configured to use a filter without a namespace such as 'MyFilter', then it can match 'MyOrg.MyProduct.MyFilter' or simply 'MyFilter'
+            // If a feature is configured to use a filter with a namespace such as 'MyOrg.MyProduct.MyFilter' then it can only match 'MyOrg.MyProduct.MyFilter' 
+            if (desiredName.Contains('.'))
+            {
+                //
+                // The configured filter name is namespaced. It must be an exact match.
+                return string.Equals(metadataName, desiredName, StringComparison.OrdinalIgnoreCase);
+            }
+            else
+            {
+                //
+                // We take the simple name of a filter, E.g. 'MyFilter' for 'MyOrg.MyProduct.MyFilter'
+                string simpleName = metadataName.Contains('.') ? metadataName.Split('.').Last() : metadataName;
+
+                return string.Equals(simpleName, desiredName, StringComparison.OrdinalIgnoreCase);
+            }
         }
 
         private ContextualFeatureFilterEvaluator GetContextualFeatureFilter(string filterName, Type appContextType)
@@ -250,6 +385,28 @@ namespace Microsoft.FeatureManagement
             );
 
             return filter;
+        }
+
+        private ContextualFeatureVariantAssignerEvaluator GetContextualFeatureVariantAssigner(string assignerName, Type appContextType)
+        {
+            if (appContextType == null)
+            {
+                throw new ArgumentNullException(nameof(appContextType));
+            }
+
+            ContextualFeatureVariantAssignerEvaluator assigner = _contextualFeatureVariantAssignerCache.GetOrAdd(
+                $"{assignerName}{Environment.NewLine}{appContextType.FullName}",
+                (_) => {
+
+                    IFeatureVariantAssignerMetadata metadata = GetFeatureAssignerMetadata(assignerName);
+
+                    return ContextualFeatureVariantAssignerEvaluator.IsContextualFilter(metadata, appContextType) ?
+                        new ContextualFeatureVariantAssignerEvaluator(metadata, appContextType) :
+                        null;
+                }
+            );
+
+            return assigner;
         }
     }
 }

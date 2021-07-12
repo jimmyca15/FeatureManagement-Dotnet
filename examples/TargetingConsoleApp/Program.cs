@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 //
+using Consoto.Banking.AccountService;
 using Consoto.Banking.AccountService.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,12 +21,15 @@ namespace Consoto.Banking.HelpDesk
             //
             // Setup configuration
             IConfiguration configuration = new ConfigurationBuilder()
-                .AddJsonFile("appsettings.json")
+                .AddJsonFile("appsettings.json", false, true)
                 .Build();
 
             //
             // Setup application services + feature management
             IServiceCollection services = new ServiceCollection();
+
+            services.AddSingleton(typeof(IFeatureVariantAssignerMetadata), typeof(DayOfWeekAssigner));
+            services.AddSingleton(typeof(IFeatureVariantAssignerMetadata), typeof(ContextualTargetingFeatureVariantAssigner));
 
             services.AddSingleton(configuration)
                     .AddFeatureManagement()
@@ -38,39 +42,48 @@ namespace Consoto.Banking.HelpDesk
             using (ServiceProvider serviceProvider = services.BuildServiceProvider())
             {
                 IFeatureManager featureManager = serviceProvider.GetRequiredService<IFeatureManager>();
+                IFeatureVariantManager variantManager = serviceProvider.GetRequiredService<IFeatureVariantManager>();
 
                 //
                 // We'll simulate a task to run on behalf of each known user
                 // To do this we enumerate all the users in our user repository
                 IEnumerable<string> userIds = InMemoryUserRepository.Users.Select(u => u.Id);
 
-                //
-                // Mimic work items in a task-driven console application
-                foreach (string userId in userIds)
+
+                while (true)
                 {
-                    const string FeatureName = "Beta";
+                    Console.Clear();
 
                     //
-                    // Get user
-                    User user = await userRepository.GetUser(userId);
-
-                    //
-                    // Check if feature enabled
-                    TargetingContext targetingContext = new TargetingContext
+                    // Mimic work items in a task-driven console application
+                    foreach (string userId in userIds)
                     {
-                        UserId = user.Id,
-                        Groups = user.Groups
-                    };
+                        const string FeatureName = "Beta";
 
-                    bool enabled = await featureManager.IsEnabledAsync(FeatureName, targetingContext);
+                        //
+                        // Get user
+                        User user = await userRepository.GetUser(userId);
 
-                    CartOptions cartOptions = await featureManager.GetVariantAsync<CartOptions, TargetingContext>("ShoppingCart", targetingContext);
+                        //
+                        // Check if feature enabled
+                        TargetingContext targetingContext = new TargetingContext
+                        {
+                            UserId = user.Id,
+                            Groups = user.Groups
+                        };
 
-                    Console.WriteLine($"User {user.Id}'s cart size: {cartOptions.Size}.");
+                        bool enabled = await featureManager.IsEnabledAsync(FeatureName, targetingContext);
 
-                    //
-                    // Output results
-                    Console.WriteLine($"The {FeatureName} feature is {(enabled ? "enabled" : "disabled")} for the user '{userId}'.");
+                        CartOptions cartOptions = await variantManager.GetVariantAsync<CartOptions, TargetingContext>("ShoppingCart", targetingContext);
+
+                        Console.WriteLine($"User {user.Id}'s cart size: {cartOptions.Size}.");
+
+                        //
+                        // Output results
+                        Console.WriteLine($"The {FeatureName} feature is {(enabled ? "enabled" : "disabled")} for the user '{userId}'.");
+                    }
+
+                    await Task.Delay(TimeSpan.FromSeconds(2));
                 }
             }
         }

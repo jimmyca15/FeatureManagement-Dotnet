@@ -3,7 +3,6 @@
 //
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Primitives;
-using Microsoft.FeatureManagement.FeatureFilters;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -131,6 +130,8 @@ namespace Microsoft.FeatureManagement
 
             var variants = new List<FeatureVariant>();
 
+            string assigner = null;
+
             string val = configurationSection.Value; // configuration[$"{featureName}"];
 
             if (string.IsNullOrEmpty(val))
@@ -182,19 +183,23 @@ namespace Microsoft.FeatureManagement
 
                         variant.Name = section.GetValue<string>("Name");
 
-                        variant.Audience = section.GetSection("Audience").Get<Audience>();
+                        variant.ConfigurationReference = section.GetValue<string>("ConfigurationReference");
+
+                        variant.AssignmentParameters = section.GetSection("AssignmentParameters");
 
                         variants.Add(variant);
                     }
                 }
 
+                assigner = configurationSection.GetValue<string>("Assigner");
             }
 
             return new FeatureDefinition()
             {
                 Name = configurationSection.Key,
                 EnabledFor = enabledFor,
-                Variants = variants
+                Variants = variants,
+                Assigner = assigner
             };
         }
 

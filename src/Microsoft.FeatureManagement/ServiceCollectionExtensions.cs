@@ -4,6 +4,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.FeatureManagement.FeatureFilters;
 using System;
 
 namespace Microsoft.FeatureManagement
@@ -26,15 +27,25 @@ namespace Microsoft.FeatureManagement
             // Add required services
             services.TryAddSingleton<IFeatureDefinitionProvider, ConfigurationFeatureDefinitionProvider>();
 
-            services.TryAddSingleton<IFeatureVariantProvider, ConfigurationFeatureVariantProvider>();
+            services.TryAddSingleton<IFeatureVariantOptionsResolver, ConfigurationFeatureVariantOptionsResolver>();
 
-            services.TryAddSingleton<IFeatureVariantResolver, TargetingFeatureVariantResolver>();
+            services.TryAddSingleton<IContextualFeatureVariantAssigner<ITargetingContext>, ContextualTargetingFeatureVariantAssigner>();
 
-            services.AddSingleton<IFeatureManager, FeatureManager>();
+            services.AddSingleton<FeatureManager>();
 
-            services.AddSingleton<ISessionManager, EmptySessionManager>();
+            services.TryAddSingleton<IFeatureManager>(sp => sp.GetRequiredService<FeatureManager>());
 
-            services.AddScoped<IFeatureManagerSnapshot, FeatureManagerSnapshot>();
+            services.TryAddSingleton<IFeatureManager2>(sp => sp.GetRequiredService<FeatureManager>());
+
+            services.TryAddSingleton<IFeatureVariantManager>(sp => sp.GetRequiredService<FeatureManager>());
+
+            services.TryAddSingleton<ISessionManager, EmptySessionManager>();
+
+            services.AddScoped<FeatureManagerSnapshot>();
+
+            services.TryAddScoped<IFeatureManagerSnapshot>(sp => sp.GetRequiredService<FeatureManagerSnapshot>());
+
+            services.TryAddScoped<IFeatureManagerSnapshot2>(sp => sp.GetRequiredService<FeatureManagerSnapshot>());
 
             return new FeatureManagementBuilder(services);
         }

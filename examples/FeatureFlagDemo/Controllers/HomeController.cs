@@ -14,10 +14,13 @@ namespace FeatureFlagDemo.Controllers
     public class HomeController : Controller
     {
         private readonly IFeatureManager _featureManager;
+        private readonly IFeatureVariantManager _variantManager;
 
-        public HomeController(IFeatureManagerSnapshot featureSnapshot)
+        public HomeController(IFeatureManagerSnapshot featureSnapshot,
+                              IFeatureVariantManager variantManager)
         {
             _featureManager = featureSnapshot;
+            _variantManager = variantManager;
         }
 
         [FeatureGate(MyFeatureFlags.Home)]
@@ -28,11 +31,13 @@ namespace FeatureFlagDemo.Controllers
 
         public async Task<IActionResult> About()
         {
+            DiscountBannerOptions bannerOptions = await _variantManager.GetVariantAsync<DiscountBannerOptions>("DiscountBanner");
+
             ViewData["Message"] = "Your application description page.";
 
-            if (await _featureManager.IsEnabledAsync(nameof(MyFeatureFlags.CustomViewData)))
+            if (await _featureManager.IsEnabledAsync(MyFeatureFlags.CustomViewData))
             {
-                ViewData["Message"] = $"This is FANCY CONTENT you can see only if '{nameof(MyFeatureFlags.CustomViewData)}' is enabled.";
+                ViewData["Message"] = $"This is FANCY CONTENT you can see only if '{MyFeatureFlags.CustomViewData}' is enabled.";
             };
 
             return View();

@@ -54,6 +54,8 @@ namespace FeatureFlagDemo
             // Add required services for TargetingFilter
             services.AddSingleton<ITargetingContextAccessor, HttpContextTargetingContextAccessor>();
 
+            services.AddSingleton<IFeatureVariantAssignerMetadata, TargetingFeatureVariantAssigner>();
+
             services.AddFeatureManagement()
                     .AddFeatureFilter<BrowserFilter>()
                     .AddFeatureFilter<TimeWindowFilter>()
